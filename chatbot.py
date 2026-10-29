@@ -1,12 +1,13 @@
-
 import re
 
 STOPWORDS = {
     "what", "is", "are", "the", "a", "an", "how", "do", "i",
     "can", "to", "for", "of", "in", "on", "my", "please",
     "tell", "me", "about", "and", "or", "university",
-    "available", "does", "your"
+    "available", "does", "your", "which", "list", "give",
+    "show", "me", "much"
 }
+
 
 def tokens(text):
     return [
@@ -22,9 +23,7 @@ def find_answer(question, db, fallback_faqs):
 
     if db is not None:
         try:
-            docs = db.collection("faqs").stream()
-
-            for doc in docs:
+            for doc in db.collection("faqs").stream():
                 row = doc.to_dict() or {}
 
                 if row.get("question") and row.get("answer"):
@@ -33,22 +32,24 @@ def find_answer(question, db, fallback_faqs):
             if faqs:
                 source = "Cloud Firestore"
 
-        except Exception:
-            faqs = []
+        except Exception as error:
+            print("Firestore read error:", error)
 
     if not faqs:
         faqs = fallback_faqs
 
-    question_tokens = set(tokens(question))
+    normalized_question = (question or "").strip().lower()
+    question_tokens = set(tokens(normalized_question))
 
     if not question_tokens:
         return (
-            "Please enter a question about admissions, courses, "
-            "fees, scholarships, examinations, or student services.",
+            "Please ask a question about admissions, courses, fees, "
+            "scholarships, examinations, or student services.",
             source
         )
 
-    scored = []
+    best_faq = None
+    best_score = 0
 
     for faq in faqs:
         faq_question = faq.get("question", "")
@@ -60,30 +61,24 @@ def find_answer(question, db, fallback_faqs):
         searchable_text = faq_question + " " + " ".join(keywords)
         faq_tokens = set(tokens(searchable_text))
 
+        if normalized_question == faq_question.strip().lower():
+            return faq["answer"], source
+
         if not faq_tokens:
             continue
 
         overlap = len(question_tokens & faq_tokens)
         score = overlap / len(question_tokens)
 
-        # Exact question match gets highest priority.
-        if question.strip().lower() == faq_question.strip().lower():
-            score = 2.0
+        if score > best_score:
+            best_score = score
+            best_faq = faq
 
-        # Prefer a FAQ that matches the question more closely.
-        if overlap > 0:
-            scored.append((score, faq))
-
-    if scored:
-        scored.sort(key=lambda item: item[0], reverse=True)
-        best_score, best_faq = scored[0]
-
-        if best_score >= 0.5:
-            return best_faq["answer"], source
+    if best_faq and best_score >= 0.5:
+        return best_faq["answer"], source
 
     return (
-        "I couldn't find a sufficiently matching answer in the FAQ database. "
-        "Please try another question or contact the university office.",
+        "I couldn't find a matching answer in the FAQ database. "
+        "Please try asking with different keywords or contact the university office.",
         source
     )
-
