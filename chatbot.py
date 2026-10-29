@@ -1,4 +1,4 @@
-```python
+
 import re
 
 STOPWORDS = {
@@ -86,4 +86,4 @@ def find_answer(question, db, fallback_faqs):
         "Please try another question or contact the university office.",
         source
     )
-```
+
